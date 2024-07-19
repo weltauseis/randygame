@@ -1,7 +1,7 @@
 
 int entry(int argc, char **argv)
 {
-	window.title = STR("Minimal Game");
+	window.title = STR("Cool Game");
 	window.scaled_width = 1280; // We need to set the scaled size if we want to handle system scaling (DPI)
 	window.scaled_height = 720;
 	window.x = 200;
@@ -20,6 +20,9 @@ int entry(int argc, char **argv)
 	{
 		reset_temporary_storage();
 		os_update();
+		draw_frame.projection = m4_make_orthographic_projection(window.width * -0.5, window.width * 0.5, window.height * -0.5, window.height * 0.5, -1, 100);
+		f32 zoom = 10.;
+		draw_frame.view = m4_make_scale(v3(1. / zoom, 1. / zoom, 1.));
 
 		if (is_key_just_pressed(KEY_ESCAPE))
 			window.should_close = true;
@@ -47,11 +50,13 @@ int entry(int argc, char **argv)
 		}
 		input_axis = v2_normalize(input_axis);
 
-		player_pos = v2_add(player_pos, v2_mulf(input_axis, delta_t));
+		player_pos = v2_add(player_pos, v2_mulf(input_axis, 100.0 * delta_t));
 
+		Vector2 size = v2(5., 7.);
 		Matrix4 xform = m4_scalar(1.0);
-		xform = m4_translate(xform, v3(player_pos.x, player_pos.y, 0));
-		draw_image_xform(player_sprite, xform, v2(.5f, .5f), COLOR_WHITE);
+		xform = m4_translate(xform, v3(size.x * -0.5, 0., 0.));
+		xform = m4_translate(xform, v3(player_pos.x, player_pos.y, 0.));
+		draw_image_xform(player_sprite, xform, v2(5., 7.), COLOR_WHITE);
 
 		gfx_update();
 
