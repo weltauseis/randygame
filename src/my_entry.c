@@ -101,9 +101,47 @@ Sprite *get_sprite(SpriteID id)
 	}
 }
 
+bool almost_equal(f32 a, f32 b, f32 epsilon)
+{
+	return fabs(a - b) <= epsilon;
+}
+
+bool animate_f32_to_target(f32 *value, f32 target, f32 delta_t, f32 rate)
+{
+	*value += (target - *value) * (1.0 - powf(2.0, -rate * delta_t));
+
+	if (almost_equal(*value, target, 0.001f))
+	{
+		*value = target;
+		return true;
+	}
+
+	return false;
+}
+
+bool animate_v2_to_target(Vector2 *value, Vector2 target, f32 delta_t, f32 rate)
+{
+	bool x_reached = animate_f32_to_target(&(value->x), target.x, delta_t, rate);
+	bool y_reached = animate_f32_to_target(&(value->y), target.y, delta_t, rate);
+
+	return x_reached && y_reached;
+}
+
+Vector2 mouse_to_world_pos(f32 mouse_x, f32 mouse_y, Matrix4 proj, Matrix4 view)
+{
+	f32 x_ndc = (2. * mouse_x / window.width) - 1.;
+	f32 y_ndc = (2. * mouse_y / window.height) - 1.;
+
+	Vector4 world_pos = v4(x_ndc, y_ndc, 0., 1.);
+	world_pos = m4_transform(m4_inverse(proj), world_pos);
+	world_pos = m4_transform(view, world_pos);
+
+	return v2(world_pos.x, world_pos.y);
+}
+
 int entry(int argc, char **argv)
 {
-	window.title = STR("Cool Game");
+	window.title = STR("Game Programming in C");
 	window.scaled_width = 1280; // We need to set the scaled size if we want to handle system scaling (DPI)
 	window.scaled_height = 720;
 	window.x = 200;
@@ -146,8 +184,15 @@ int entry(int argc, char **argv)
 		.image = load_image_from_disk(fixed_string("art/rock1.png"), get_heap_allocator()),
 		.size = v2(11., 7.)};
 
+	Gfx_Font *font = load_font_from_disk(STR("C:/windows/fonts/arial.ttf"), get_heap_allocator());
+	assert(font, "could not load arial font");
+	const u32 font_height = 48;
+
 	Entity *player_ent = entity_create();
 	setup_player(player_ent);
+
+	f32 zoom = 10.;
+	Vector2 camera_pos = v2(0., 0.);
 
 	s32 frame_count = 0;
 	f64 seconds_counter = 0.0;
@@ -156,16 +201,25 @@ int entry(int argc, char **argv)
 	{
 		reset_temporary_storage();
 		os_update();
-		draw_frame.projection = m4_make_orthographic_projection(window.width * -0.5, window.width * 0.5, window.height * -0.5, window.height * 0.5, -1, 100);
-		f32 zoom = 10.;
-		draw_frame.view = m4_make_scale(v3(1. / zoom, 1. / zoom, 1.));
-
-		if (is_key_just_pressed(KEY_ESCAPE))
-			window.should_close = true;
 
 		f64 now_t = os_get_current_time_in_seconds();
 		f64 delta_t = now_t - previous_t;
 		previous_t = os_get_current_time_in_seconds();
+
+		// camera stuff
+		draw_frame.projection = m4_make_orthographic_projection(window.width * -0.5, window.width * 0.5, window.height * -0.5, window.height * 0.5, -1, 100);
+		Vector2 target_pos = player_ent->pos;
+		animate_v2_to_target(&camera_pos, target_pos, delta_t, 7.0);
+		draw_frame.view = m4_scalar(1.0);
+		draw_frame.view = m4_mul(draw_frame.view, m4_make_translation(v3(camera_pos.x, camera_pos.y, 0.)));
+		draw_frame.view = m4_mul(draw_frame.view, m4_make_scale(v3(1. / zoom, 1. / zoom, 1.)));
+
+		// input
+		if (is_key_just_pressed(KEY_ESCAPE))
+			window.should_close = true;
+
+		Vector2 mouse_in_world = mouse_to_world_pos(input_frame.mouse_x, input_frame.mouse_y, draw_frame.projection, draw_frame.view);
+		draw_text(font, sprint(temp, STR("%.1f %.1f"), mouse_in_world.x, mouse_in_world.y), font_height, mouse_in_world, v2(0.1, 0.1), COLOR_BLUE);
 
 		Vector2 input_axis = v2(0, 0);
 		if (is_key_down('Q'))
@@ -202,6 +256,7 @@ int entry(int argc, char **argv)
 					xform = m4_translate(xform, v3(entity_sprite->size.x * -0.5, 0., 0.)); // pivot center bottom
 					xform = m4_translate(xform, v3(entity->pos.x, entity->pos.y, 0.));	   // position
 					draw_image_xform(entity_sprite->image, xform, entity_sprite->size, COLOR_WHITE);
+					draw_text(font, sprint(temp, STR("%.1f %.1f"), entity->pos.x, entity->pos.y), font_height, v2_add(entity->pos, v2(0., -4.)), v2(.1, .1), COLOR_WHITE);
 				}
 				break;
 				}
