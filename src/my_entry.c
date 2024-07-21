@@ -244,7 +244,6 @@ int entry(int argc, char **argv)
 		s32 mouse_tile_pos_x = world_to_tile(mouse_in_world.x);
 		s32 mouse_tile_pos_y = world_to_tile(mouse_in_world.y);
 
-		log("%d %d", mouse_tile_pos_x, mouse_tile_pos_y);
 		for (int i = 0; i < MAX_ENTITY_COUNT; i++)
 		{
 			Entity *entity = &world->entities[i];
