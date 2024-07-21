@@ -139,6 +139,23 @@ Vector2 mouse_to_world_pos(f32 mouse_x, f32 mouse_y, Matrix4 proj, Matrix4 view)
 	return v2(world_pos.x, world_pos.y);
 }
 
+const s32 TILE_WIDTH = 8;
+
+s32 world_to_tile(f32 world_pos)
+{
+	return roundf(world_pos / (float)TILE_WIDTH);
+}
+
+f32 tile_to_world(s32 tile_pos)
+{
+	return (f32)tile_pos * (f32)TILE_WIDTH;
+}
+
+Vector2 v2_tilemap_round_world_pos(Vector2 world_pos)
+{
+	return v2(world_to_tile(world_pos.x) * TILE_WIDTH, world_to_tile(world_pos.y) * TILE_WIDTH);
+}
+
 int entry(int argc, char **argv)
 {
 	window.title = STR("Game Programming in C");
@@ -155,6 +172,8 @@ int entry(int argc, char **argv)
 		Entity *entity = entity_create();
 		setup_rock(entity);
 		entity->pos = v2(get_random_float32_in_range(-100, 100), get_random_float32_in_range(-100, 100));
+		entity->pos = v2_tilemap_round_world_pos(entity->pos);
+		entity->pos = v2_sub(entity->pos, v2(0., 0.5 * TILE_WIDTH));
 	}
 	// spawn trees
 	for (int i = 0; i < 10; i++)
@@ -162,6 +181,8 @@ int entry(int argc, char **argv)
 		Entity *entity = entity_create();
 		setup_tree(entity);
 		entity->pos = v2(get_random_float32_in_range(-100, 100), get_random_float32_in_range(-100, 100));
+		entity->pos = v2_tilemap_round_world_pos(entity->pos);
+		entity->pos = v2_sub(entity->pos, v2(0., 0.5 * TILE_WIDTH));
 	}
 
 	sprites[SPRITE_PLAYER] = (Sprite){
@@ -178,11 +199,11 @@ int entry(int argc, char **argv)
 
 	sprites[SPRITE_ROCK0] = (Sprite){
 		.image = load_image_from_disk(fixed_string("art/rock0.png"), get_heap_allocator()),
-		.size = v2(11., 7.)};
+		.size = v2(8., 7.)};
 
 	sprites[SPRITE_ROCK1] = (Sprite){
 		.image = load_image_from_disk(fixed_string("art/rock1.png"), get_heap_allocator()),
-		.size = v2(11., 7.)};
+		.size = v2(8., 7.)};
 
 	Gfx_Font *font = load_font_from_disk(STR("C:/windows/fonts/arial.ttf"), get_heap_allocator());
 	assert(font, "could not load arial font");
@@ -218,8 +239,59 @@ int entry(int argc, char **argv)
 		if (is_key_just_pressed(KEY_ESCAPE))
 			window.should_close = true;
 
+		// mouse hover test
 		Vector2 mouse_in_world = mouse_to_world_pos(input_frame.mouse_x, input_frame.mouse_y, draw_frame.projection, draw_frame.view);
-		draw_text(font, sprint(temp, STR("%.1f %.1f"), mouse_in_world.x, mouse_in_world.y), font_height, mouse_in_world, v2(0.1, 0.1), COLOR_BLUE);
+		s32 mouse_tile_pos_x = world_to_tile(mouse_in_world.x);
+		s32 mouse_tile_pos_y = world_to_tile(mouse_in_world.y);
+
+		log("%d %d", mouse_tile_pos_x, mouse_tile_pos_y);
+		for (int i = 0; i < MAX_ENTITY_COUNT; i++)
+		{
+			Entity *entity = &world->entities[i];
+			if (entity->is_valid)
+			{
+				Sprite *sprite = get_sprite(entity->sprite_id);
+				Range2f bounds = range2f_make_bottom_center(sprite->size);
+				bounds = range2f_shift(bounds, entity->pos);
+
+				Vector4 col = COLOR_RED;
+				col.a = 0.4;
+				if (range2f_contains(bounds, mouse_in_world))
+				{
+					col.a = 1.0;
+				}
+
+				draw_rect(v2_sub(entity->pos, v2(sprite->size.x * 0.5, 0.)), sprite->size, col);
+			}
+		}
+
+		// draw a sample tile map
+		s32 tilemap_radius_x = 16;
+		s32 tilemap_radius_y = 8;
+		s32 player_tile_x = world_to_tile(player_ent->pos.x);
+		s32 player_tile_y = world_to_tile(player_ent->pos.y);
+		for (s32 x = player_tile_x - tilemap_radius_x; x < player_tile_x + tilemap_radius_x; x++)
+		{
+			for (s32 y = player_tile_y - tilemap_radius_y; y < player_tile_y + tilemap_radius_y; y++)
+			{
+				Vector4 color = v4(0., 0., 0., 0.);
+				// color only even tiles
+				if ((x + (y % 2 == 0)) % 2 == 0)
+				{
+					color = v4(0., 0., 1., 0.3);
+				}
+
+				Vector2 tile_pos = v2(x, y);
+				tile_pos = v2_mulf(tile_pos, TILE_WIDTH);
+				draw_rect(v2_sub(tile_pos, v2(0.5 * TILE_WIDTH, 0.5 * TILE_WIDTH)), v2(TILE_WIDTH, TILE_WIDTH), color);
+
+				// color the hovered tile
+				if (x == mouse_tile_pos_x && y == mouse_tile_pos_y)
+				{
+					draw_rect(v2_sub(tile_pos, v2(0.5 * TILE_WIDTH, 0.5 * TILE_WIDTH)), v2(TILE_WIDTH, TILE_WIDTH), v4(1., 0.9, 0., 1.));
+				}
+			}
+		}
 
 		Vector2 input_axis = v2(0, 0);
 		if (is_key_down('Q'))
@@ -256,7 +328,6 @@ int entry(int argc, char **argv)
 					xform = m4_translate(xform, v3(entity_sprite->size.x * -0.5, 0., 0.)); // pivot center bottom
 					xform = m4_translate(xform, v3(entity->pos.x, entity->pos.y, 0.));	   // position
 					draw_image_xform(entity_sprite->image, xform, entity_sprite->size, COLOR_WHITE);
-					draw_text(font, sprint(temp, STR("%.1f %.1f"), entity->pos.x, entity->pos.y), font_height, v2_add(entity->pos, v2(0., -4.)), v2(.1, .1), COLOR_WHITE);
 				}
 				break;
 				}
