@@ -28,6 +28,7 @@ typedef enum EntityArchetype
 	ARCH_PLAYER = 3,
 	ARCH_ITEM_WOOD = 4,
 	ARCH_ITEM_STONE = 5,
+	ARCH_MAX,
 } EntityArchetype;
 
 typedef struct Entity
@@ -46,10 +47,16 @@ typedef struct Entity
 	bool is_item;
 } Entity;
 
+typedef struct ItemData
+{
+	u32 amount;
+} ItemData;
+
 #define MAX_ENTITY_COUNT 128
 typedef struct World
 {
 	Entity entities[MAX_ENTITY_COUNT];
+	ItemData inventory_items[ARCH_MAX];
 } World;
 
 World *world = null;
@@ -239,6 +246,11 @@ int entry(int argc, char **argv)
 		entity->pos = v2_tilemap_round_world_pos(entity->pos);
 		// entity->pos = v2_sub(entity->pos, v2(0., 0.5 * TILE_WIDTH));
 	}
+	// add test items
+	{
+		world->inventory_items[ARCH_ITEM_WOOD].amount = 5;
+		world->inventory_items[ARCH_ITEM_STONE].amount = 3;
+	}
 
 	sprites[SPRITE_PLAYER] = (Sprite){
 		.image = load_image_from_disk(fixed_string("res/sprites/player.png"), get_heap_allocator())};
@@ -321,7 +333,29 @@ int entry(int argc, char **argv)
 			}
 		}
 
-		// draw a sample tile map
+		// update entities
+		f32 player_pickup_radius = 8.0;
+		for (int i = 0; i < MAX_ENTITY_COUNT; i++)
+		{
+			Entity *entity = &world->entities[i];
+			if (entity->is_valid)
+			{
+				// pick up nearby items
+				if (entity->is_item)
+				{
+					// TODO - add physics to item pickup
+
+					f32 dist_to_player = v2_length(v2_sub(entity->pos, player_ent->pos));
+					if (dist_to_player < player_pickup_radius)
+					{
+						world->inventory_items[entity->arch].amount += 1;
+						entity_destroy(entity);
+					}
+				}
+			}
+		}
+
+		// draw the tile map
 		s32 tilemap_radius_x = 16;
 		s32 tilemap_radius_y = 8;
 		s32 player_tile_x = world_pos_to_tile_pos(player_ent->pos.x);
@@ -334,7 +368,7 @@ int entry(int argc, char **argv)
 				// color only even tiles
 				if ((x + (y % 2 == 0)) % 2 == 0)
 				{
-					color = v4(0., 0., 1., 0.3);
+					color = v4(1., 1., 1., 0.1);
 				}
 
 				f32 tile_pos_in_world_x = tile_pos_to_world_pos(x) - TILE_WIDTH * 0.5;
