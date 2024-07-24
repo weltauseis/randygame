@@ -43,6 +43,7 @@ typedef struct Entity
 	SpriteID sprite_id;
 	// items
 	s32 item_count; // unused
+	bool is_item;
 } Entity;
 
 #define MAX_ENTITY_COUNT 128
@@ -114,6 +115,7 @@ void setup_item_wood(Entity *entity)
 {
 	entity->arch = ARCH_ITEM_WOOD;
 	entity->render_sprite = true;
+	entity->is_item = true;
 	entity->sprite_id = SPRITE_ITEM_WOOD;
 	// ...
 }
@@ -122,6 +124,7 @@ void setup_item_stone(Entity *entity)
 {
 	entity->arch = ARCH_ITEM_STONE;
 	entity->render_sprite = true;
+	entity->is_item = true;
 	entity->sprite_id = SPRITE_ITEM_STONE;
 	// ...
 }
@@ -172,6 +175,11 @@ bool animate_v2_to_target(Vector2 *value, Vector2 target, f32 delta_t, f32 rate)
 	bool y_reached = animate_f32_to_target(&(value->y), target.y, delta_t, rate);
 
 	return x_reached && y_reached;
+}
+
+f32 sin_breathe(f32 time, f32 rate)
+{
+	return sin(time * rate) * 0.5 + 1.0;
 }
 
 Vector2 mouse_to_world_pos(f32 mouse_x, f32 mouse_y, Matrix4 proj, Matrix4 view)
@@ -404,6 +412,7 @@ int entry(int argc, char **argv)
 
 		player_ent->pos = v2_add(player_ent->pos, v2_mulf(input_axis, 50.0 * delta_t));
 
+		// draw entities
 		for (int i = 0; i < MAX_ENTITY_COUNT; i++)
 		{
 			Entity *entity = &world->entities[i];
@@ -415,6 +424,10 @@ int entry(int argc, char **argv)
 				{
 					Sprite *entity_sprite = get_sprite(entity->sprite_id);
 					Matrix4 xform = m4_scalar(1.0);
+
+					if (entity->is_item)
+						xform = m4_translate(xform, v3(0., sin_breathe(now_t, 2.5), 0.));
+
 					// xform = m4_translate(xform, v3(entity_sprite->size.x * -0.5, 0., 0.)); // pivot center bottom
 					xform = m4_translate(xform, v3(entity_sprite->image->width * -0.5, -0.5 * TILE_WIDTH, 0.)); // pivot center and a little up to account for the tile
 					xform = m4_translate(xform, v3(entity->pos.x, entity->pos.y, 0.));							// position
