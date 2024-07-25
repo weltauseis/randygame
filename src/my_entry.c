@@ -153,6 +153,21 @@ Sprite *get_sprite(SpriteID id)
 	return &sprites[0];
 }
 
+SpriteID get_sprite_id_from_archetype(EntityArchetype archetype)
+{
+	switch (archetype)
+	{
+	case ARCH_ITEM_STONE:
+		return SPRITE_ITEM_STONE;
+
+	case ARCH_ITEM_WOOD:
+		return SPRITE_ITEM_WOOD;
+
+	default:
+		return SPRITE_NIL;
+	}
+}
+
 Vector2 get_sprite_size(Sprite *sprite)
 {
 	return v2(sprite->image->width, sprite->image->height);
@@ -229,7 +244,7 @@ int entry(int argc, char **argv)
 
 	world = alloc(get_heap_allocator(), sizeof(World));
 	// spawn rocks
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 30; i++)
 	{
 		Entity *entity = entity_create();
 		setup_rock(entity);
@@ -238,7 +253,7 @@ int entry(int argc, char **argv)
 		// entity->pos = v2_sub(entity->pos, v2(0., 0.5 * TILE_WIDTH));
 	}
 	// spawn trees
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 30; i++)
 	{
 		Entity *entity = entity_create();
 		setup_tree(entity);
@@ -249,8 +264,11 @@ int entry(int argc, char **argv)
 	// add test items
 	{
 		world->inventory_items[ARCH_ITEM_WOOD].amount = 5;
-		world->inventory_items[ARCH_ITEM_STONE].amount = 3;
+		// world->inventory_items[ARCH_ITEM_STONE].amount = 3;
 	}
+
+	sprites[SPRITE_NIL] = (Sprite){
+		.image = load_image_from_disk(fixed_string("res/sprites/missing_texture.png"), get_heap_allocator())};
 
 	sprites[SPRITE_PLAYER] = (Sprite){
 		.image = load_image_from_disk(fixed_string("res/sprites/player.png"), get_heap_allocator())};
@@ -446,7 +464,7 @@ int entry(int argc, char **argv)
 
 		player_ent->pos = v2_add(player_ent->pos, v2_mulf(input_axis, 50.0 * delta_t));
 
-		// draw entities
+		// entities rendering
 		for (int i = 0; i < MAX_ENTITY_COUNT; i++)
 		{
 			Entity *entity = &world->entities[i];
@@ -473,6 +491,52 @@ int entry(int argc, char **argv)
 					draw_image_xform(entity_sprite->image, xform, get_sprite_size(entity_sprite), color);
 				}
 				break;
+				}
+			}
+		}
+
+		// UI rendering
+		{
+			f32 w = 240.;
+			f32 h = 135.;
+			draw_frame.view = m4_scalar(1.0f);
+			draw_frame.projection = m4_make_orthographic_projection(0.0, w, 0, h, -1., 10.);
+
+			f32 x_pos = 0.;
+			f32 y_pos = 20.0;
+
+			f32 item_width = 8.0;
+			f32 padding = 2.0;
+
+			// find how how many items to draw
+			s32 items_count = 0;
+			for (int archetype_i = 0; archetype_i < ARCH_MAX; archetype_i++)
+			{
+				ItemData *item = &world->inventory_items[archetype_i];
+				if (item->amount > 0)
+				{
+					items_count += 1;
+				}
+			}
+
+			// draw the items
+			f32 items_bar_width = item_width * items_count + padding * (items_count - 1);
+			x_pos = (w - items_bar_width) * 0.5;
+
+			for (int archetype_i = 0; archetype_i < ARCH_MAX; archetype_i++)
+			{
+				ItemData *item = &world->inventory_items[archetype_i];
+				if (item->amount > 0)
+				{
+					Matrix4 xform = m4_scalar(1.0);
+					xform = m4_translate(xform, v3(x_pos, y_pos, 0.));
+
+					draw_rect_xform(xform, v2(item_width, item_width), COLOR_BLACK);
+
+					Sprite *item_sprite = get_sprite(get_sprite_id_from_archetype(archetype_i));
+					draw_image_xform(item_sprite->image, xform, get_sprite_size(item_sprite), COLOR_WHITE);
+
+					x_pos += item_width + padding;
 				}
 			}
 		}
