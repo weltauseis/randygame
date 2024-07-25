@@ -173,6 +173,21 @@ Vector2 get_sprite_size(Sprite *sprite)
 	return v2(sprite->image->width, sprite->image->height);
 }
 
+string get_archetype_pretty_name(EntityArchetype archetype)
+{
+	switch (archetype)
+	{
+	case ARCH_ITEM_WOOD:
+		return STR("Wood");
+
+	case ARCH_ITEM_STONE:
+		return STR("Stone");
+
+	default:
+		return STR("NIL");
+	}
+}
+
 bool almost_equal(f32 a, f32 b, f32 epsilon)
 {
 	return fabs(a - b) <= epsilon;
@@ -201,7 +216,7 @@ bool animate_v2_to_target(Vector2 *value, Vector2 target, f32 delta_t, f32 rate)
 
 f32 sin_breathe(f32 time, f32 rate)
 {
-	return sin(time * rate) * 0.5 + 1.0;
+	return sin(time * rate) * 0.5 + 0.5;
 }
 
 Vector2 mouse_to_world_pos(f32 mouse_x, f32 mouse_y, Matrix4 proj, Matrix4 view)
@@ -214,6 +229,19 @@ Vector2 mouse_to_world_pos(f32 mouse_x, f32 mouse_y, Matrix4 proj, Matrix4 view)
 	world_pos = m4_transform(view, world_pos);
 
 	return v2(world_pos.x, world_pos.y);
+}
+
+Range2f quad_to_range(Draw_Quad *quad)
+{
+	return (Range2f){quad->bottom_left, quad->top_right};
+}
+
+Vector2 mouse_to_ndc(f32 mouse_x, f32 mouse_y)
+{
+	f32 x_ndc = (2. * mouse_x / window.width) - 1.;
+	f32 y_ndc = (2. * mouse_y / window.height) - 1.;
+
+	return v2(x_ndc, y_ndc);
 }
 
 const s32 TILE_WIDTH = 8;
@@ -502,41 +530,92 @@ int entry(int argc, char **argv)
 			draw_frame.view = m4_scalar(1.0f);
 			draw_frame.projection = m4_make_orthographic_projection(0.0, w, 0, h, -1., 10.);
 
-			f32 x_pos = 0.;
-			f32 y_pos = 20.0;
-
-			f32 item_width = 8.0;
-			f32 padding = 2.0;
-
-			// find how how many items to draw
-			s32 items_count = 0;
-			for (int archetype_i = 0; archetype_i < ARCH_MAX; archetype_i++)
+			// inventory
+			if (false)
 			{
-				ItemData *item = &world->inventory_items[archetype_i];
-				if (item->amount > 0)
-				{
-					items_count += 1;
-				}
-			}
+				f32 item_width = 8.0;
+				f32 padding = 2.0;
 
-			// draw the items
-			f32 items_bar_width = item_width * items_count + padding * (items_count - 1);
-			x_pos = (w - items_bar_width) * 0.5;
+				s32 icon_row_count = 8;
+				f32 inventory_width = icon_row_count * (item_width + padding);
 
-			for (int archetype_i = 0; archetype_i < ARCH_MAX; archetype_i++)
-			{
-				ItemData *item = &world->inventory_items[archetype_i];
-				if (item->amount > 0)
+				f32 x_pos = (w - inventory_width) * 0.5;
+				f32 y_pos = 70.;
+
+				Vector4 bg_box_color = v4(0., 0., 0., 0.5);
+				// draw the background box
 				{
 					Matrix4 xform = m4_scalar(1.0);
 					xform = m4_translate(xform, v3(x_pos, y_pos, 0.));
+					draw_rect_xform(xform, v2(inventory_width, item_width), bg_box_color);
+				}
 
-					draw_rect_xform(xform, v2(item_width, item_width), COLOR_BLACK);
+				// draw the items
+				for (int archetype_i = 0; archetype_i < ARCH_MAX; archetype_i++)
+				{
+					ItemData *item = &world->inventory_items[archetype_i];
+					if (item->amount > 0)
+					{
+						Matrix4 xform = m4_scalar(1.0);
+						xform = m4_translate(xform, v3(x_pos, y_pos, 0.));
 
-					Sprite *item_sprite = get_sprite(get_sprite_id_from_archetype(archetype_i));
-					draw_image_xform(item_sprite->image, xform, get_sprite_size(item_sprite), COLOR_WHITE);
+						// draw lighter square & store its range
+						Range2f slot_range = quad_to_range(draw_rect_xform(xform, v2(item_width, item_width), v4(1., 1., 1., .3)));
 
-					x_pos += item_width + padding;
+						Sprite *item_sprite = get_sprite(get_sprite_id_from_archetype(archetype_i));
+						xform = m4_translate(xform, v3(item_width * 0.5, item_width * 0.5, 0.));
+						Vector2 slot_center = m4_transform(xform, v4(0., 0., 0., 1.)).xy;
+
+						bool is_selected = range2f_contains(slot_range, mouse_to_ndc(input_frame.mouse_x, input_frame.mouse_y));
+						if (is_selected)
+						{
+							f32 icon_scale = 1.3 /* + 0.2 * sin_breathe(now_t, 3.0) */;
+							xform = m4_scale(xform, v3(icon_scale, icon_scale, 1.));
+						}
+						xform = m4_translate(xform, v3(item_sprite->image->width * -0.5, item_sprite->image->height * -0.5, 0.));
+						draw_image_xform(item_sprite->image, xform, get_sprite_size(item_sprite), COLOR_WHITE);
+
+						// tooltip
+						if (is_selected)
+						{
+							// background box
+							Matrix4 xform = m4_scalar(1.0);
+							Vector2 box_size = v2(40, 14);
+
+							xform = m4_translate(xform, v3(slot_center.x, slot_center.y, 0.0)); // put it where we render the square
+							xform = m4_translate(xform, v3(box_size.x * -0.5, box_size.y * -1. - item_width * 0.5, 0.));
+
+							draw_rect_xform(xform, box_size, bg_box_color);
+
+							// text
+							f32 current_text_y = -10.;
+							{
+								string text_string = get_archetype_pretty_name(archetype_i);
+								Gfx_Text_Metrics metrics = measure_text(font, text_string, font_height, v2(0.1, 0.1));
+
+								Matrix4 text_xform = m4_scalar(1.0);
+								text_xform = m4_translate(text_xform, v3(slot_center.x, slot_center.y, 0.0));		 // put it in the center of the slot
+								text_xform = m4_translate(text_xform, v3(-metrics.functional_size.x * 0.5, 0., 0.)); // pivot is now top center
+								text_xform = m4_translate(text_xform, v3(0., current_text_y, 0.));					 // pad it down
+								draw_text_xform(font, text_string, font_height, text_xform, v2(0.1, 0.1), COLOR_WHITE);
+								current_text_y += -5.;
+							}
+
+							{
+								string text_string = sprintf(temp, "x%d", item->amount);
+								Gfx_Text_Metrics metrics = measure_text(font, text_string, font_height, v2(0.1, 0.1));
+
+								Matrix4 text_xform = m4_scalar(1.0);
+								text_xform = m4_translate(text_xform, v3(slot_center.x, slot_center.y, 0.0));		 // put it in the center of the slot
+								text_xform = m4_translate(text_xform, v3(-metrics.functional_size.x * 0.5, 0., 0.)); // pivot is now top center
+								text_xform = m4_translate(text_xform, v3(0., current_text_y, 0.));					 // pad it down
+								draw_text_xform(font, text_string, font_height, text_xform, v2(0.1, 0.1), COLOR_WHITE);
+								current_text_y += -5.;
+							}
+						}
+
+						x_pos += item_width + padding;
+					}
 				}
 			}
 		}
