@@ -8,6 +8,8 @@ typedef enum SpriteID
 	SPRITE_ROCK1,
 	SPRITE_ITEM_WOOD,
 	SPRITE_ITEM_STONE,
+	SPRITE_FURNACE,
+	SPRITE_WORKBENCH,
 	SPRITE_MAX,
 } SpriteID;
 
@@ -28,6 +30,8 @@ typedef enum EntityArchetype
 	ARCH_PLAYER = 3,
 	ARCH_ITEM_WOOD = 4,
 	ARCH_ITEM_STONE = 5,
+	ARCH_FURNACE = 6,
+	ARCH_WORKBENCH = 7,
 	ARCH_MAX,
 } EntityArchetype;
 
@@ -56,6 +60,7 @@ typedef enum UXState
 {
 	UX_NIL,
 	UX_INVENTORY,
+	UX_BUILDING,
 } UXState;
 
 #define MAX_ENTITY_COUNT 128
@@ -64,8 +69,6 @@ typedef struct World
 	Entity entities[MAX_ENTITY_COUNT];
 	ItemData inventory_items[ARCH_MAX];
 	UXState ux_state;
-	f32 inventory_alpha;
-	f32 inventory_alpha_target;
 } World;
 
 World *world = null;
@@ -145,6 +148,22 @@ void setup_item_stone(Entity *entity)
 	// ...
 }
 
+void setup_furnace(Entity *entity)
+{
+	entity->arch = ARCH_FURNACE;
+	entity->render_sprite = true;
+	entity->sprite_id = SPRITE_FURNACE;
+	// ...
+}
+
+void setup_workbench(Entity *entity)
+{
+	entity->arch = ARCH_WORKBENCH;
+	entity->render_sprite = true;
+	entity->sprite_id = SPRITE_WORKBENCH;
+	// ...
+}
+
 typedef struct Sprite
 {
 	Gfx_Image *image;
@@ -156,7 +175,13 @@ Sprite *get_sprite(SpriteID id)
 {
 	if (id >= 0 && id <= SPRITE_MAX)
 	{
-		return &sprites[id];
+		Sprite *sprite = &sprites[id];
+		// the image might be null even if the ID is valid
+		// if the loading failed or never happened
+		if (sprite->image)
+		{
+			return sprite;
+		}
 	}
 
 	return &sprites[0];
@@ -298,35 +323,33 @@ int entry(int argc, char **argv)
 		entity->pos = v2_tilemap_round_world_pos(entity->pos);
 		// entity->pos = v2_sub(entity->pos, v2(0., 0.5 * TILE_WIDTH));
 	}
-	// add test items
+	// add test items @ship remove this
 	{
 		world->inventory_items[ARCH_ITEM_WOOD].amount = 5;
 		// world->inventory_items[ARCH_ITEM_STONE].amount = 3;
+		Entity *furnace_entity = entity_create();
+		setup_furnace(furnace_entity);
+		furnace_entity->pos.x = 16.;
 	}
 
-	sprites[SPRITE_NIL] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/missing_texture.png"), get_heap_allocator())};
+	sprites[SPRITE_NIL] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/missing_texture.png"), get_heap_allocator())};
+	sprites[SPRITE_PLAYER] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/player.png"), get_heap_allocator())};
+	sprites[SPRITE_PINE_TREE] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/pine_tree.png"), get_heap_allocator())};
+	sprites[SPRITE_OAK_TREE] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/oak_tree.png"), get_heap_allocator())};
+	sprites[SPRITE_ROCK0] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/rock0.png"), get_heap_allocator())};
+	sprites[SPRITE_ROCK1] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/rock1.png"), get_heap_allocator())};
+	sprites[SPRITE_ITEM_WOOD] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/item_wood.png"), get_heap_allocator())};
+	sprites[SPRITE_ITEM_STONE] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/item_stone.png"), get_heap_allocator())};
+	sprites[SPRITE_FURNACE] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/furnace.png"), get_heap_allocator())};
+	sprites[SPRITE_WORKBENCH] = (Sprite){.image = load_image_from_disk(fixed_string("res/sprites/workbench.png"), get_heap_allocator())};
 
-	sprites[SPRITE_PLAYER] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/player.png"), get_heap_allocator())};
-
-	sprites[SPRITE_PINE_TREE] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/pine_tree.png"), get_heap_allocator())};
-
-	sprites[SPRITE_OAK_TREE] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/oak_tree.png"), get_heap_allocator())};
-
-	sprites[SPRITE_ROCK0] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/rock0.png"), get_heap_allocator())};
-
-	sprites[SPRITE_ROCK1] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/rock1.png"), get_heap_allocator())};
-
-	sprites[SPRITE_ITEM_WOOD] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/item_wood.png"), get_heap_allocator())};
-
-	sprites[SPRITE_ITEM_STONE] = (Sprite){
-		.image = load_image_from_disk(fixed_string("res/sprites/item_stone.png"), get_heap_allocator())};
+	//@ship remove this
+	{
+		for (int i = 0; i < SPRITE_MAX; i++)
+		{
+			assert(sprites[i].image, "Sprite was not setup properly");
+		}
+	}
 
 	Gfx_Font *font = load_font_from_disk(STR("C:/windows/fonts/arial.ttf"), get_heap_allocator());
 	assert(font, "could not load arial font");
@@ -547,11 +570,7 @@ int entry(int argc, char **argv)
 			draw_frame.projection = m4_make_orthographic_projection(0.0, w, 0, h, -1., 10.);
 
 			// inventory
-			world->inventory_alpha_target = (world->ux_state == UX_INVENTORY) ? 1.0 : 0.0;
-			world->inventory_alpha = world->inventory_alpha_target;
-			// TODO : some opacity / animate_f32_to_target(&world->inventory_alpha, world->inventory_alpha_target, delta_t, 1.0);
-
-			bool is_inventory_enabled = (world->inventory_alpha_target != 0.0);
+			bool is_inventory_enabled = (world->ux_state == UX_INVENTORY);
 			if (is_inventory_enabled)
 			{
 				f32 item_width = 8.0;
@@ -638,6 +657,12 @@ int entry(int argc, char **argv)
 						x_pos += item_width + padding;
 					}
 				}
+			}
+
+			// building UI
+			bool is_building_enabled = (world->ux_state == UX_BUILDING);
+			if (world->ux_state == UX_BUILDING)
+			{
 			}
 		}
 
