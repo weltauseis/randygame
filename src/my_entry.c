@@ -52,11 +52,20 @@ typedef struct ItemData
 	u32 amount;
 } ItemData;
 
+typedef enum UXState
+{
+	UX_NIL,
+	UX_INVENTORY,
+} UXState;
+
 #define MAX_ENTITY_COUNT 128
 typedef struct World
 {
 	Entity entities[MAX_ENTITY_COUNT];
 	ItemData inventory_items[ARCH_MAX];
+	UXState ux_state;
+	f32 inventory_alpha;
+	f32 inventory_alpha_target;
 } World;
 
 World *world = null;
@@ -523,6 +532,13 @@ int entry(int argc, char **argv)
 			}
 		}
 
+		// UI state updating
+		if (is_key_just_pressed(KEY_TAB))
+		{
+			consume_key_just_pressed(KEY_TAB);
+			world->ux_state = (world->ux_state == UX_INVENTORY) ? UX_NIL : UX_INVENTORY;
+		}
+
 		// UI rendering
 		{
 			f32 w = 240.;
@@ -531,7 +547,12 @@ int entry(int argc, char **argv)
 			draw_frame.projection = m4_make_orthographic_projection(0.0, w, 0, h, -1., 10.);
 
 			// inventory
-			if (false)
+			world->inventory_alpha_target = (world->ux_state == UX_INVENTORY) ? 1.0 : 0.0;
+			world->inventory_alpha = world->inventory_alpha_target;
+			// TODO : some opacity / animate_f32_to_target(&world->inventory_alpha, world->inventory_alpha_target, delta_t, 1.0);
+
+			bool is_inventory_enabled = (world->inventory_alpha_target != 0.0);
+			if (is_inventory_enabled)
 			{
 				f32 item_width = 8.0;
 				f32 padding = 2.0;
@@ -602,7 +623,7 @@ int entry(int argc, char **argv)
 							}
 
 							{
-								string text_string = sprintf(temp, "x%d", item->amount);
+								string text_string = sprintf(temp_allocator, "x%d", item->amount);
 								Gfx_Text_Metrics metrics = measure_text(font, text_string, font_height, v2(0.1, 0.1));
 
 								Matrix4 text_xform = m4_scalar(1.0);
